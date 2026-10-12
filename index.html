@@ -1,321 +1,412 @@
-<script>
-  // ---------------------------
-  // Settings
-  // ---------------------------
-  const SETTINGS = {
-    openHour: 10,          // 10:00
-    closeHour: 18,         // 18:00 (آخرین نوبت می‌تواند قبل از این باشد)
-    slotMinutes: 30,       // فاصله زمانی اسلات‌ها
-    phoneRegex: /^09\d{9}$/ // موبایل ایران
-  };
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نوبت‌دهی آرایشگاه</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
 
-  // ---------------------------
-  // State (LocalStorage)
-  // ---------------------------
-  let services = JSON.parse(localStorage.getItem('barber_services')) || [
-    { id: 1, name: 'اصلاح سر و صورت', price: 150000 },
-    { id: 2, name: 'پاکسازی پوست', price: 200000 }
-  ];
+  <!-- هدر -->
+  <header class="bg-indigo-600 text-white shadow">
+    <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+      <h1 class="font-bold text-lg flex items-center gap-2">
+        <i class="fa-solid fa-scissors"></i> نوبت‌دهی آرایشگاه
+      </h1>
+      <div class="flex gap-1 bg-indigo-800/50 p-1 rounded-xl">
+        <button id="btnClient" onclick="switchTab('client')" class="bg-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium transition">رزرو نوبت</button>
+        <button id="btnAdmin" onclick="switchTab('admin')" class="px-3 py-1.5 rounded-lg text-sm font-medium transition">مدیریت</button>
+      </div>
+    </div>
+  </header>
 
-  let appointments = JSON.parse(localStorage.getItem('barber_appointments')) || [];
+  <main class="max-w-md mx-auto p-4">
+    <!-- بخش مشتری (رزرو نوبت) -->
+    <section id="clientView" class="bg-white rounded-2xl shadow-sm p-5 space-y-4">
+      <h2 class="font-bold text-indigo-900 text-base">رزرو نوبت جدید</h2>
+      
+      <form id="bookingForm" onsubmit="bookAppointment(event)" class="space-y-4">
+        <!-- پیام‌ها -->
+        <div id="msgBox" class="hidden text-sm rounded-xl px-4 py-3 border"></div>
 
-  function saveData() {
-    localStorage.setItem('barber_services', JSON.stringify(services));
-    localStorage.setItem('barber_appointments', JSON.stringify(appointments));
-  }
-
-  // ---------------------------
-  // Helpers
-  // ---------------------------
-  function toMinutes(hhmm) {
-    const [h, m] = hhmm.split(':').map(Number);
-    return h * 60 + m;
-  }
-
-  function pad2(n) { return String(n).padStart(2, '0'); }
-
-  function buildTimeSlots() {
-    const slots = [];
-    const start = SETTINGS.openHour * 60;
-    const end = SETTINGS.closeHour * 60;
-    for (let t = start; t <= end; t += SETTINGS.slotMinutes) {
-      const h = Math.floor(t / 60);
-      const m = t % 60;
-      slots.push(`${pad2(h)}:${pad2(m)}`);
-    }
-    return slots;
-  }
-
-  function setMinDateToday() {
-    const dateInput = document.getElementById('bookingDate');
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = pad2(today.getMonth() + 1);
-    const dd = pad2(today.getDate());
-    dateInput.min = `${yyyy}-${mm}-${dd}`;
-    if (!dateInput.value) dateInput.value = dateInput.min;
-  }
-
-  function ensureMessageBox() {
-    let box = document.getElementById('msgBox');
-    if (!box) {
-      const form = document.getElementById('bookingForm');
-      box = document.createElement('div');
-      box.id = 'msgBox';
-      box.className = 'hidden text-sm rounded-xl px-4 py-3 border';
-      form.prepend(box);
-    }
-    return box;
-  }
-
-  function showMsg(text, type = 'info') {
-    const box = ensureMessageBox();
-    box.classList.remove('hidden');
-    if (type === 'error') {
-      box.className = 'text-sm rounded-xl px-4 py-3 border bg-red-50 border-red-200 text-red-700';
-    } else if (type === 'success') {
-      box.className = 'text-sm rounded-xl px-4 py-3 border bg-green-50 border-green-200 text-green-700';
-    } else {
-      box.className = 'text-sm rounded-xl px-4 py-3 border bg-indigo-50 border-indigo-200 text-indigo-800';
-    }
-    box.textContent = text;
-  }
-
-  function clearMsg() {
-    const box = document.getElementById('msgBox');
-    if (box) box.classList.add('hidden');
-  }
-
-  function isSlotTaken(date, time) {
-    return appointments.some(a => a.date === date && a.time === time);
-  }
-
-  // ---------------------------
-  // Rendering
-  // ---------------------------
-  function renderServicesDropdown() {
-    const select = document.getElementById('serviceSelect');
-    select.innerHTML = '';
-    services.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = `${s.name} - ${Number(s.price).toLocaleString()} تومان`;
-      select.appendChild(opt);
-    });
-  }
-
-  function renderAdminServices() {
-    const list = document.getElementById('servicesList');
-    list.innerHTML = '';
-    services.forEach((s, index) => {
-      list.innerHTML += `
-        <div class="flex justify-between items-center p-3 bg-gray-50 rounded-xl border text-sm">
-          <span><b>${s.name}</b> - ${Number(s.price).toLocaleString()} تومان</span>
-          <button onclick="deleteService(${index})" class="text-red-500 hover:text-red-700">
-            <i class="fa-solid fa-trash"></i>
-          </button>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">نام و نام خانوادگی</label>
+          <input type="text" id="clientName" required class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" placeholder="مثلاً علی رضایی">
         </div>
-      `;
-    });
-  }
 
-  function renderAppointments() {
-    const list = document.getElementById('appointmentsList');
-    if (appointments.length === 0) {
-      list.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">هنوز نوبتی ثبت نشده است.</p>';
-      return;
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">شماره تماس</label>
+          <input type="tel" id="clientPhone" required class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500" placeholder="09123456789">
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">انتخاب خدمت</label>
+          <select id="serviceSelect" class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-indigo-500"></select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">تاریخ</label>
+            <input type="date" id="bookingDate" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-600 mb-1">ساعت</label>
+            <select id="bookingTime" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:border-indigo-500"></select>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition text-sm shadow-sm">
+          ثبت و رزرو نوبت
+        </button>
+      </form>
+    </section>
+
+    <!-- بخش ادمین (مدیریت) -->
+    <section id="adminView" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm p-5 space-y-4">
+        <h2 class="font-bold text-indigo-900 text-base">افزودن خدمت جدید</h2>
+        <form onsubmit="addService(event)" class="space-y-3">
+          <input type="text" id="newServiceName" placeholder="نام خدمت (مثلاً اصلاح ریش)" required class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500">
+          <input type="number" id="newServicePrice" placeholder="قیمت (تومان)" required class="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-indigo-500">
+          <button type="submit" class="w-full bg-gray-800 hover:bg-gray-900 text-white font-medium py-2.5 rounded-xl transition text-sm">افزودن خدمت</button>
+        </form>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+        <h2 class="font-bold text-indigo-900 text-base">لیست خدمات</h2>
+        <div id="servicesList" class="space-y-2"></div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+        <h2 class="font-bold text-indigo-900 text-base">نوبت‌های ثبت‌شده</h2>
+        <div id="appointmentsList" class="space-y-2"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const SETTINGS = {
+      openHour: 10,
+      closeHour: 18,
+      slotMinutes: 30,
+      phoneRegex: /^09\d{9}$/
+    };
+
+    let services = JSON.parse(localStorage.getItem('barber_services')) || [
+      { id: 1, name: 'اصلاح سر و صورت', price: 150000 },
+      { id: 2, name: 'پاکسازی پوست', price: 200000 }
+    ];
+
+    let appointments = JSON.parse(localStorage.getItem('barber_appointments')) || [];
+
+    function saveData() {
+      localStorage.setItem('barber_services', JSON.stringify(services));
+      localStorage.setItem('barber_appointments', JSON.stringify(appointments));
     }
 
-    // مرتب‌سازی: جدیدترین بالا
-    const sorted = [...appointments].sort((a, b) => {
-      const da = `${a.date} ${a.time}`;
-      const db = `${b.date} ${b.time}`;
-      return db.localeCompare(da);
-    });
+    function toMinutes(hhmm) {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + m;
+    }
 
-    list.innerHTML = '';
-    sorted.forEach((app) => {
-      list.innerHTML += `
-        <div class="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 text-sm space-y-1">
-          <div class="flex justify-between font-bold text-indigo-900">
-            <span>${app.name}</span>
-            <span>${app.phone}</span>
-          </div>
-          <div class="text-gray-600 text-xs">خدمت: ${app.service}</div>
-          <div class="flex justify-between text-gray-500 text-xs pt-1 border-t border-indigo-100 items-center">
-            <span>تاریخ: ${app.date}</span>
-            <span>ساعت: ${app.time}</span>
-            <button onclick="deleteAppointmentById(${app.id})" class="text-red-500 hover:text-red-700">
-              <i class="fa-solid fa-trash"></i> حذف
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    function buildTimeSlots() {
+      const slots = [];
+      const start = SETTINGS.openHour * 60;
+      const end = SETTINGS.closeHour * 60;
+      for (let t = start; t <= end; t += SETTINGS.slotMinutes) {
+        const h = Math.floor(t / 60);
+        const m = t % 60;
+        slots.push(`${pad2(h)}:${pad2(m)}`);
+      }
+      return slots;
+    }
+
+    function setMinDateToday() {
+      const dateInput = document.getElementById('bookingDate');
+      if (!dateInput) return;
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = pad2(today.getMonth() + 1);
+      const dd = pad2(today.getDate());
+      dateInput.min = `${yyyy}-${mm}-${dd}`;
+      if (!dateInput.value) dateInput.value = dateInput.min;
+    }
+
+    function ensureMessageBox() {
+      let box = document.getElementById('msgBox');
+      if (!box) {
+        const form = document.getElementById('bookingForm');
+        if (!form) return null;
+        box = document.createElement('div');
+        box.id = 'msgBox';
+        box.className = 'hidden text-sm rounded-xl px-4 py-3 border';
+        form.prepend(box);
+      }
+      return box;
+    }
+
+    function showMsg(text, type = 'info') {
+      const box = ensureMessageBox();
+      if (!box) return;
+      box.classList.remove('hidden');
+      if (type === 'error') {
+        box.className = 'text-sm rounded-xl px-4 py-3 border bg-red-50 border-red-200 text-red-700';
+      } else if (type === 'success') {
+        box.className = 'text-sm rounded-xl px-4 py-3 border bg-green-50 border-green-200 text-green-700';
+      } else {
+        box.className = 'text-sm rounded-xl px-4 py-3 border bg-indigo-50 border-indigo-200 text-indigo-800';
+      }
+      box.textContent = text;
+    }
+
+    function clearMsg() {
+      const box = document.getElementById('msgBox');
+      if (box) box.classList.add('hidden');
+    }
+
+    function isSlotTaken(date, time) {
+      return appointments.some(a => a.date === date && a.time === time);
+    }
+
+    function renderServicesDropdown() {
+      const select = document.getElementById('serviceSelect');
+      if (!select) return;
+      select.innerHTML = '';
+      services.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.name;
+        opt.textContent = `${s.name} - ${Number(s.price).toLocaleString()} تومان`;
+        select.appendChild(opt);
+      });
+    }
+
+    function renderAdminServices() {
+      const list = document.getElementById('servicesList');
+      if (!list) return;
+      list.innerHTML = '';
+      services.forEach((s, index) => {
+        list.innerHTML += `
+          <div class="flex justify-between items-center p-3 bg-gray-50 rounded-xl border text-sm">
+            <span><b>${s.name}</b> - ${Number(s.price).toLocaleString()} تومان</span>
+            <button onclick="deleteService(${index})" class="text-red-500 hover:text-red-700">
+              <i class="fa-solid fa-trash"></i>
             </button>
           </div>
-        </div>
-      `;
-    });
-  }
-
-  function renderTimeDropdown() {
-    const timeSelect = document.getElementById('bookingTime');
-    const date = document.getElementById('bookingDate').value;
-
-    const slots = buildTimeSlots();
-    timeSelect.innerHTML = '';
-
-    slots.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t;
-
-      const taken = date ? isSlotTaken(date, t) : false;
-      opt.disabled = taken;
-      opt.textContent = taken ? `${t} (پر شده)` : t;
-
-      timeSelect.appendChild(opt);
-    });
-
-    // اگر همه پر است
-    if ([...timeSelect.options].every(o => o.disabled)) {
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'تمام زمان‌ها پر است';
-      timeSelect.innerHTML = '';
-      timeSelect.appendChild(opt);
-      timeSelect.value = '';
+        `;
+      });
     }
-  }
 
-  // ---------------------------
-  // Actions
-  // ---------------------------
-  function switchTab(tab) {
-    const clientView = document.getElementById('clientView');
-    const adminView = document.getElementById('adminView');
-    const btnClient = document.getElementById('btnClient');
-    const btnAdmin = document.getElementById('btnAdmin');
+    function renderAppointments() {
+      const list = document.getElementById('appointmentsList');
+      if (!list) return;
+      if (appointments.length === 0) {
+        list.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">هنوز نوبتی ثبت نشده است.</p>';
+        return;
+      }
 
-    if (tab === 'client') {
-      clientView.classList.remove('hidden');
-      adminView.classList.add('hidden');
-      btnClient.className = 'bg-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium transition';
-      btnAdmin.className = 'bg-indigo-800/60 px-3 py-1.5 rounded-lg text-sm font-medium transition';
+      const sorted = [...appointments].sort((a, b) => {
+        const da = `${a.date} ${a.time}`;
+        const db = `${b.date} ${b.time}`;
+        return db.localeCompare(da);
+      });
+
+      list.innerHTML = '';
+      sorted.forEach((app) => {
+        list.innerHTML += `
+          <div class="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 text-sm space-y-1">
+            <div class="flex justify-between font-bold text-indigo-900">
+              <span>${app.name}</span>
+              <span>${app.phone}</span>
+            </div>
+            <div class="text-gray-600 text-xs">خدمت: ${app.service}</div>
+            <div class="flex justify-between text-gray-500 text-xs pt-1 border-t border-indigo-100 items-center">
+              <span>تاریخ: ${app.date}</span>
+              <span>ساعت: ${app.time}</span>
+              <button onclick="deleteAppointmentById(${app.id})" class="text-red-500 hover:text-red-700">
+                <i class="fa-solid fa-trash"></i> حذف
+              </button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function renderTimeDropdown() {
+      const timeSelect = document.getElementById('bookingTime');
+      const dateInput = document.getElementById('bookingDate');
+      if (!timeSelect || !dateInput) return;
+
+      const date = dateInput.value;
+      const slots = buildTimeSlots();
+      timeSelect.innerHTML = '';
+
+      slots.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+
+        const taken = date ? isSlotTaken(date, t) : false;
+        opt.disabled = taken;
+        opt.textContent = taken ? `${t} (پر شده)` : t;
+
+        timeSelect.appendChild(opt);
+      });
+
+      if ([...timeSelect.options].every(o => o.disabled)) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'تمام زمان‌ها پر است';
+        timeSelect.innerHTML = '';
+        timeSelect.appendChild(opt);
+        timeSelect.value = '';
+      }
+    }
+
+    function switchTab(tab) {
+      const clientView = document.getElementById('clientView');
+      const adminView = document.getElementById('adminView');
+      const btnClient = document.getElementById('btnClient');
+      const btnAdmin = document.getElementById('btnAdmin');
+
+      if (!clientView || !adminView) return;
+
+      if (tab === 'client') {
+        clientView.classList.remove('hidden');
+        adminView.classList.add('hidden');
+        if(btnClient) btnClient.className = 'bg-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium transition';
+        if(btnAdmin) btnAdmin.className = 'px-3 py-1.5 rounded-lg text-sm font-medium transition';
+        renderServicesDropdown();
+        setMinDateToday();
+        renderTimeDropdown();
+        clearMsg();
+      } else {
+        clientView.classList.add('hidden');
+        adminView.classList.remove('hidden');
+        if(btnAdmin) btnAdmin.className = 'bg-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium transition';
+        if(btnClient) btnClient.className = 'px-3 py-1.5 rounded-lg text-sm font-medium transition';
+        renderAdminServices();
+        renderAppointments();
+        clearMsg();
+      }
+    }
+
+    function addService(e) {
+      e.preventDefault();
+      const nameInput = document.getElementById('newServiceName');
+      const priceInput = document.getElementById('newServicePrice');
+      if (!nameInput || !priceInput) return;
+
+      const name = nameInput.value.trim();
+      const price = Number(priceInput.value);
+
+      if (!name) return;
+      if (!Number.isFinite(price) || price <= 0) return;
+
+      const exists = services.some(s => s.name.trim() === name);
+      if (exists) {
+        alert('این خدمت قبلاً اضافه شده است.');
+        return;
+      }
+
+      services.push({ id: Date.now(), name, price });
+      saveData();
+
+      nameInput.value = '';
+      priceInput.value = '';
+
+      renderAdminServices();
+      renderServicesDropdown();
+    }
+
+    function deleteService(index) {
+      services.splice(index, 1);
+      saveData();
+      renderAdminServices();
+      renderServicesDropdown();
+    }
+
+    function bookAppointment(e) {
+      e.preventDefault();
+      clearMsg();
+
+      const nameInput = document.getElementById('clientName');
+      const phoneInput = document.getElementById('clientPhone');
+      const serviceSelect = document.getElementById('serviceSelect');
+      const dateInput = document.getElementById('bookingDate');
+      const timeSelect = document.getElementById('bookingTime');
+
+      if (!nameInput || !phoneInput || !serviceSelect || !dateInput || !timeSelect) return;
+
+      const name = nameInput.value.trim();
+      const phone = phoneInput.value.trim();
+      const service = serviceSelect.value;
+      const date = dateInput.value;
+      const time = timeSelect.value;
+
+      if (!name || name.length < 3) {
+        showMsg('نام و نام خانوادگی را کامل وارد کنید.', 'error');
+        return;
+      }
+      if (!SETTINGS.phoneRegex.test(phone)) {
+        showMsg('شماره تماس معتبر نیست. نمونه درست: 09123456789', 'error');
+        return;
+      }
+      if (!date) {
+        showMsg('تاریخ را انتخاب کنید.', 'error');
+        return;
+      }
+      if (!time) {
+        showMsg('ساعت معتبر انتخاب کنید.', 'error');
+        return;
+      }
+
+      const now = new Date();
+      const dt = new Date(`${date}T${time}:00`);
+      if (dt < now) {
+        showMsg('این زمان گذشته است. یک زمان دیگر انتخاب کنید.', 'error');
+        return;
+      }
+
+      if (isSlotTaken(date, time)) {
+        showMsg('این بازه زمانی قبلاً رزرو شده است. زمان دیگری انتخاب کنید.', 'error');
+        renderTimeDropdown();
+        return;
+      }
+
+      appointments.push({ id: Date.now(), name, phone, service, date, time });
+      saveData();
+
+      showMsg('نوبت شما با موفقیت ثبت شد!', 'success');
+      const form = document.getElementById('bookingForm');
+      if (form) form.reset();
+
+      setMinDateToday();
+      renderTimeDropdown();
+      renderAppointments();
+    }
+
+    function deleteAppointmentById(id) {
+      appointments = appointments.filter(a => a.id !== id);
+      saveData();
+      renderAppointments();
+      renderTimeDropdown();
+    }
+
+    // اجرای اولیه بعد از لود کامل صفحه
+    document.addEventListener('DOMContentLoaded', () => {
+      const dateInput = document.getElementById('bookingDate');
+      if (dateInput) {
+        dateInput.addEventListener('change', () => {
+          renderTimeDropdown();
+        });
+      }
       renderServicesDropdown();
       setMinDateToday();
       renderTimeDropdown();
-      clearMsg();
-    } else {
-      clientView.classList.add('hidden');
-      adminView.classList.remove('hidden');
-      btnAdmin.className = 'bg-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium transition';
-      btnClient.className = 'bg-indigo-800/60 px-3 py-1.5 rounded-lg text-sm font-medium transition';
-      renderAdminServices();
-      renderAppointments();
-      clearMsg();
-    }
-  }
-
-  function addService(e) {
-    e.preventDefault();
-    const name = document.getElementById('newServiceName').value.trim();
-    const price = Number(document.getElementById('newServicePrice').value);
-
-    if (!name) return;
-    if (!Number.isFinite(price) || price <= 0) return;
-
-    // جلوگیری از تکراری شدن نام خدمت
-    const exists = services.some(s => s.name.trim() === name);
-    if (exists) {
-      alert('این خدمت قبلاً اضافه شده است.');
-      return;
-    }
-
-    services.push({ id: Date.now(), name, price });
-    saveData();
-
-    document.getElementById('newServiceName').value = '';
-    document.getElementById('newServicePrice').value = '';
-
-    renderAdminServices();
-    renderServicesDropdown();
-  }
-
-  function deleteService(index) {
-    services.splice(index, 1);
-    saveData();
-    renderAdminServices();
-    renderServicesDropdown();
-  }
-
-  function bookAppointment(e) {
-    e.preventDefault();
-    clearMsg();
-
-    const name = document.getElementById('clientName').value.trim();
-    const phone = document.getElementById('clientPhone').value.trim();
-    const service = document.getElementById('serviceSelect').value;
-    const date = document.getElementById('bookingDate').value;
-    const time = document.getElementById('bookingTime').value;
-
-    if (!name || name.length < 3) {
-      showMsg('نام و نام خانوادگی را کامل وارد کنید.', 'error');
-      return;
-    }
-    if (!SETTINGS.phoneRegex.test(phone)) {
-      showMsg('شماره تماس معتبر نیست. نمونه درست: 09123456789', 'error');
-      return;
-    }
-    if (!date) {
-      showMsg('تاریخ را انتخاب کنید.', 'error');
-      return;
-    }
-    if (!time) {
-      showMsg('ساعت معتبر انتخاب کنید.', 'error');
-      return;
-    }
-
-    // جلوگیری از رزرو گذشته
-    const now = new Date();
-    const dt = new Date(`${date}T${time}:00`);
-    if (dt < now) {
-      showMsg('این زمان گذشته است. یک زمان دیگر انتخاب کنید.', 'error');
-      return;
-    }
-
-    // جلوگیری از تداخل
-    if (isSlotTaken(date, time)) {
-      showMsg('این بازه زمانی قبلاً رزرو شده است. زمان دیگری انتخاب کنید.', 'error');
-      renderTimeDropdown();
-      return;
-    }
-
-    appointments.push({ id: Date.now(), name, phone, service, date, time });
-    saveData();
-
-    showMsg('نوبت شما با موفقیت ثبت شد!', 'success');
-    document.getElementById('bookingForm').reset();
-
-    // تنظیم دوباره min و زمان‌ها بعد از reset
-    setMinDateToday();
-    renderTimeDropdown();
-    renderAppointments(); // اگر ادمین باز بود یا بعداً رفت آنجا، داده آماده است
-  }
-
-  function deleteAppointmentById(id) {
-    appointments = appointments.filter(a => a.id !== id);
-    saveData();
-    renderAppointments();
-    renderTimeDropdown(); // زمان آزاد می‌شود
-  }
-
-  // ---------------------------
-  // Event wiring
-  // ---------------------------
-  document.getElementById('bookingDate').addEventListener('change', () => {
-    renderTimeDropdown();
-  });
-
-  // ---------------------------
-  // Initial render
-  // ---------------------------
-  renderServicesDropdown();
-  setMinDateToday();
-  renderTimeDropdown();
-</script>
+    });
+  </script>
+</body>
+</html>
