@@ -2,30 +2,49 @@
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>سیستم نوبت‌دهی آرایشگاه</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>رزرو نوبت آرایشگاه</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>body { font-family: Tahoma, sans-serif; text-align: center; padding: 20px; }</style>
+    <style>
+        body { font-family: Tahoma, sans-serif; padding: 20px; line-height: 1.6; background-color: #f4f4f9; }
+        .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+    </style>
 </head>
 <body>
-    <h1>پنل مدیریت و رزرو آرایشگاه</h1>
-    <p>سیستم با موفقیت به دیتابیس متصل شد.</p>
 
-    <script>
-        const SUPABASE_URL = 'https://eqksnvzqmoleaufwrboe.supabase.co';
-        // کلید صحیح استخراج شده از تصویر شما:
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxa3NudnpxbW9sZWF1ZndyYm9lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mjk0OTY4ODN9.hO5V129tWlqM65M7B2XyJ3-8L4YQ5_10t1W8m-3U4O4';
+<div class="container">
+    <h2>رزرو نوبت</h2>
+    <input type="text" id="name" placeholder="نام و نام خانوادگی">
+    <input type="tel" id="phone" placeholder="شماره تماس">
+    <button onclick="submitBooking()">ثبت نوبت</button>
+    <p id="msg"></p>
+</div>
 
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+<script>
+    const SUPABASE_URL = 'https://eqksnvzqmoleaufwrboe.supabase.co';
+    const SUPABASE_KEY = 'GAPGPTMASKTOKEN8drzt2gpinX0X';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function submitBooking() {
+        const name = document.getElementById('name').value;
+        const phone = document.getElementById('phone').value;
+        const msg = document.getElementById('msg');
+
+        if(!name || !phone) { alert("لطفاً همه فیلدها را پر کنید"); return; }
+
+        const { data, error } = await supabase.from('appointments').insert([{ name, phone }]);
         
-        async function testConnection() {
-            const { data, error } = await supabase.from('services').select('*').limit(1);
-            if (error) {
-                console.error("خطا در اتصال:", error.message);
-            } else {
-                console.log("اتصال دیتابیس برقرار شد!");
-            }
+        if (error) {
+            msg.innerText = "خطا: " + error.message;
+        } else {
+            msg.innerText = "نوبت شما با موفقیت ثبت شد!";
+            document.getElementById('name').value = '';
+            document.getElementById('phone').value = '';
         }
-        testConnection();
-    </script>
+    }
+</script>
+
 </body>
 </html>
